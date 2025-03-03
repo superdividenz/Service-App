@@ -6,11 +6,22 @@ import "react-calendar/dist/Calendar.css";
 import Modal from "./Addon/Modal";
 import { FaMapMarkerAlt } from "react-icons/fa";
 
-// CSS class for highlighted dates
-const highlightClass = `
+const styles = `
   .highlight {
     background-color: #ffeb3b;
     border-radius: 50%;
+    cursor: pointer;
+  }
+  .today {
+    background-color: #4caf50 !important;
+    color: white;
+    border-radius: 50%;
+  }
+  .blackout {
+    background-color: #d32f2f;
+    color: white;
+    border-radius: 50%;
+    cursor: not-allowed;
   }
 `;
 
@@ -21,6 +32,7 @@ const Dashboard = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
   const [date, setDate] = useState(new Date());
+  const [blackoutDates, setBlackoutDates] = useState([]);
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -74,7 +86,6 @@ const Dashboard = () => {
     }
   };
 
-  // Convert job date strings to Date objects for comparison
   const jobDates = jobs
     .map((job) => {
       if (job.date) {
@@ -85,7 +96,6 @@ const Dashboard = () => {
     })
     .filter(Boolean);
 
-  // Filter jobs for the selected date
   const jobsForSelectedDate = jobs.filter((job) => {
     if (job.date) {
       const [month, day, year] = job.date.split("/");
@@ -94,6 +104,48 @@ const Dashboard = () => {
     }
     return false;
   });
+
+  const handleBlackoutToggle = (clickedDate, event) => {
+    // Only toggle blackout with Ctrl+Click on non-job dates
+    if (event.ctrlKey) {
+      const dateString = clickedDate.toDateString();
+      const hasJobs = jobDates.includes(dateString);
+
+      if (!hasJobs) {
+        const isBlackout = blackoutDates.includes(dateString);
+        if (isBlackout) {
+          setBlackoutDates(blackoutDates.filter((d) => d !== dateString));
+          console.log(`Removed blackout for ${dateString}`);
+        } else {
+          setBlackoutDates([...blackoutDates, dateString]);
+          console.log(`Added blackout for ${dateString}`);
+        }
+      } else {
+        console.log(`Cannot blackout ${dateString} - has jobs`);
+        alert(
+          `Cannot blackout ${clickedDate.toLocaleDateString()} because it has scheduled jobs.`
+        );
+      }
+    }
+  };
+
+  const tileClassName = ({ date, view }) => {
+    const dateString = date.toDateString();
+    const todayString = new Date().toDateString();
+
+    if (view === "month") {
+      if (dateString === todayString) {
+        return "today";
+      }
+      if (blackoutDates.includes(dateString)) {
+        return "blackout";
+      }
+      if (jobDates.includes(dateString)) {
+        return "highlight";
+      }
+    }
+    return null;
+  };
 
   if (loading) {
     return <div className="text-center mt-8">Loading...</div>;
@@ -105,7 +157,7 @@ const Dashboard = () => {
 
   return (
     <div className="container mx-auto px-4 py-6 sm:py-8">
-      <style>{highlightClass}</style>
+      <style>{styles}</style>
       <div className="flex flex-col items-center mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold mb-4">Dashboard</h1>
       </div>
@@ -113,14 +165,15 @@ const Dashboard = () => {
         <div className="bg-white shadow rounded-lg p-4 sm:p-6">
           <h2 className="text-lg sm:text-xl font-semibold mb-4">Calendar</h2>
           <Calendar
-            onChange={setDate}
+            onChange={setDate} // Handles date selection
             value={date}
-            tileClassName={({ date, view }) => {
-              const dateString = date.toDateString();
-              return jobDates.includes(dateString) ? "highlight" : null;
-            }}
+            tileClassName={tileClassName}
+            onClickDay={handleBlackoutToggle} // Handles blackout toggle
             className="react-calendar w-full"
           />
+          <p className="mt-2 text-sm">
+            Yellow: Jobs (click to view) | Green: Today | Red: Blackout (Ctrl+Click to toggle)
+          </p>
         </div>
 
         <div className="bg-white shadow rounded-lg p-4 sm:p-6">

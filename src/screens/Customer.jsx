@@ -1,25 +1,17 @@
 import React, { useState } from "react";
 import { useForm } from "react-hook-form";
-import {
-  getFirestore,
-  collection,
-  getDocs,
-  query,
-  where,
-  updateDoc,
-  doc,
-  setDoc,
-} from "firebase/firestore";
+import { getFirestore, collection, getDocs, query, where, updateDoc, doc, setDoc } from "firebase/firestore";
 import Papa from "papaparse";
-import { v4 as uuidv4 } from "uuid"; // Import the uuid library
+import { v4 as uuidv4 } from "uuid";
 
 const AddData = () => {
   const { register, handleSubmit, setValue, reset } = useForm();
   const [searchname, setSearchLastName] = useState("");
   const [matchingJobs, setMatchingJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false); // State for modal visibility
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
+  // Handle search input to filter jobs
   const handleSearch = async (e) => {
     const input = e.target.value;
     setSearchLastName(input);
@@ -43,13 +35,29 @@ const AddData = () => {
     }
   };
 
+  // Set selected job details in form
   const handleJobClick = (job) => {
     setSelectedJob(job);
     Object.keys(job).forEach((key) => {
-      setValue(key, job[key]);
+      setValue(key, key === "date" ? formatDateForInput(job[key]) : job[key]);
     });
   };
 
+  // Format date from MM/DD/YYYY to YYYY-MM-DD for input, or leave as is if invalid
+  const formatDateForInput = (dateStr) => {
+    if (!dateStr || !dateStr.includes("/")) return dateStr;
+    const [month, day, year] = dateStr.split("/");
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  };
+
+  // Format date from YYYY-MM-DD to MM/DD/YYYY for storage
+  const formatDateForStorage = (dateStr) => {
+    if (!dateStr || !dateStr.includes("-")) return dateStr;
+    const [year, month, day] = dateStr.split("-");
+    return `${month}/${day}/${year}`;
+  };
+
+  // Handle the form submission for updating the job details
   const onSubmit = async (data) => {
     if (!selectedJob) return;
 
@@ -57,16 +65,22 @@ const AddData = () => {
     const jobDocRef = doc(db, "jobs", selectedJob.id);
 
     try {
-      await updateDoc(jobDocRef, data);
+      const updatedData = {
+        ...data,
+        date: formatDateForStorage(data.date),
+        completed: selectedJob.completed || false, // Preserve completed status
+      };
+      await updateDoc(jobDocRef, updatedData);
       alert("Job updated successfully");
       reset();
       setSelectedJob(null);
-      setMatchingJobs([]); // Clear matching jobs after update
+      setMatchingJobs([]);
     } catch (error) {
       console.error("Error updating job: ", error);
     }
   };
 
+  // Handle file upload and parse CSV
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -74,25 +88,26 @@ const AddData = () => {
     Papa.parse(file, {
       header: true,
       complete: async (results) => {
-        console.log("Parsed CSV data:", results.data); // Log parsed data
+        console.log("Parsed CSV data:", results.data);
         const db = getFirestore();
 
         for (const row of results.data) {
           try {
-            // Generate a unique ID if 'id' is missing
             const docId = row.id || uuidv4();
+            const formattedRow = {
+              ...row,
+              date: formatDateForStorage(row.date),
+              completed: row.completed === "true" || false,
+              id: docId,
+            };
             const docRef = doc(db, "jobs", docId);
-            await setDoc(docRef, { ...row, id: docId }); // Store ID in the document
+            await setDoc(docRef, formattedRow);
           } catch (error) {
-            console.error(
-              "Error adding job from CSV:",
-              error.message,
-              error.stack
-            );
+            console.error("Error adding job from CSV:", error.message, error.stack);
           }
         }
         alert("CSV data uploaded successfully");
-        setMatchingJobs([]); // Clear matching jobs after upload
+        setMatchingJobs([]);
       },
       error: (error) => {
         console.error("Error parsing CSV: ", error);
@@ -100,6 +115,7 @@ const AddData = () => {
     });
   };
 
+  // Handle downloading the jobs data as CSV
   const handleDownload = () => {
     const csv = Papa.unparse(matchingJobs);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -112,20 +128,29 @@ const AddData = () => {
     document.body.removeChild(link);
   };
 
+  // Handle adding a job manually
   const handleAddJob = async (data) => {
     const db = getFirestore();
-    const docId = uuidv4(); // Generate a unique ID for the new job
+    const docId = uuidv4();
     const docRef = doc(db, "jobs", docId);
 
     try {
-      await setDoc(docRef, { ...data, id: docId }); // Store ID in the document
+      const newJob = {
+        ...data,
+        date: formatDateForStorage(data.date),
+        completed: false,
+        id: docId,
+      };
+      await setDoc(docRef, newJob);
       alert("Job added successfully");
-      setIsModalOpen(false); // Close the modal after adding the job
-      reset(); // Reset the form fields
+      setIsModalOpen(false);
+      reset();
     } catch (error) {
       console.error("Error adding job: ", error);
     }
   };
+
+  // Close modal when clicking outside
   const handleClickOutside = (event) => {
     if (event.target.classList.contains("modal-overlay")) {
       setIsModalOpen(false);
@@ -155,7 +180,7 @@ const AddData = () => {
                 onClick={() => handleJobClick(job)}
               >
                 <span className="font-medium text-gray-700">{job.name}</span> -{" "}
-                {job.name}
+                {job.date}
               </li>
             ))}
           </ul>
@@ -193,7 +218,7 @@ const AddData = () => {
             />
             <input
               {...register("price", { required: true })}
-              type="Price"
+              placeholder="Price"
               className="border border-gray-300 p-3 rounded-md w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <textarea
@@ -223,7 +248,7 @@ const AddData = () => {
             Download Data
           </button>
           <button
-            onClick={() => setIsModalOpen(true)} // Open the modal on click
+            onClick={() => setIsModalOpen(true)}
             className="bg-purple-500 text-white px-4 py-3 mt-4 rounded-md hover:bg-purple-600 transition duration-200 w-full"
           >
             Add Job Manually
@@ -231,7 +256,6 @@ const AddData = () => {
         </div>
       </div>
 
-      {/* Modal for adding a job manually */}
       {isModalOpen && (
         <div
           className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center modal-overlay"
@@ -248,7 +272,7 @@ const AddData = () => {
                 className="border border-gray-300 p-3 rounded-md w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <input
-                {...register("email", { required: true })}
+                {...register("email", { required: false })}
                 placeholder="Email"
                 className="border border-gray-300 p-3 rounded-md w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -267,20 +291,20 @@ const AddData = () => {
                 type="date"
                 className="border border-gray-300 p-3 rounded-md w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <textarea
+              <input
                 {...register("price", { required: true })}
-                placeholder="price"
+                placeholder="Price"
                 className="border border-gray-300 p-3 rounded-md w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <textarea
                 {...register("info", { required: true })}
-                placeholder="info"
+                placeholder="Info"
                 className="border border-gray-300 p-3 rounded-md w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <div className="flex justify-end space-x-4">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)} // Close the modal
+                  onClick={() => setIsModalOpen(false)}
                   className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600 transition duration-200"
                 >
                   Cancel
